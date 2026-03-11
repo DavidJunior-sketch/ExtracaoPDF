@@ -1,12 +1,22 @@
-from pypdf import PdfReader
+from pypdf import  PdfReader
+from flask import Flask , request , jsonify
+import io
 import re
 
-caminho = r"C:\Users\lenovo\Downloads\lorem-ipsum.pdf"
-#verificador de texto
-def Obter_texto_validado(caminho):
-    reader = PdfReader(caminho)
-    texto_acumulado = ""
+app = Flask(__name__)
 
+ALLOWED_EXTENSIONS = {'pdf'}
+
+#verifica se o arquivo é pdf
+def allowed_file(filename):
+    return'.' in filename and\
+           filename.rsplit('.',1)[1].lower() in ALLOWED_EXTENSIONS
+
+#verificador de texto
+def Obter_texto_validado(file_stream):
+    # le o fluxo de dados que ve, da internet
+    reader = PdfReader(file_stream)
+    texto_acumulado = ""
     for page in reader.pages:
         extraido = page.extract_text()
         if extraido:
@@ -19,26 +29,37 @@ def normalizar_texto(texto_bruto):
     texto = re.sub(r'\s+',' ',texto)
     return texto.strip()
 
-def fragmentar_por_limite(texto , limite=1000):
-    fragmentos = [texto[i:i+limite] for i in range(0 ,len(texto),limite)]
-    return fragmentos
+ # A ROTA DA API
 
-texto_bruto = Obter_texto_validado(caminho)
+@app.route('/extraction', methods=['POST'])
+def extractions():
+    #Verifica se o arquivo foi enviado
+    if 'file' not in request.files:
+        return jsonify({"message": "Nenhum arquivo enviado"}),400
 
-if texto_bruto:
-    print("O PDF possui texto extraivel")
-    texto_final = normalizar_texto(texto_bruto)
-    blocos = [texto_final[i:i+1000] for i in range (0, len(texto_final),1000)]
+    file = request.files['file']
 
-    print(f"___ inciando apresentacao de {len(blocos)} Fragemntos ---\n")
+    if not allowed_file(file.filename):
+        return jsonify({"message": "Formato invelido! Envie apenas arquivos .pdf"}), 415
+    try:
+        #Extrai o taxto usando na funcao
+        texto_bruto = Obter_texto_validado(io.BytesIO(file.read()))
 
-    for indice, trecho in enumerate(blocos ,1):
-         print(f"### Exibindo Fragmento {indice} ###")
-         print(trecho)
-         print("_"* 50)
+        if not texto_bruto :
+           return jsonify({"message": "Arquivo PDF nao possui texto extraivel"}), 400
 
-else:
-    print("arquivo PDF não possui texto extraivel")
+        texto_final = normalizar_texto(texto_bruto)
+
+       #retorna o texto inteiro
+        return jsonify({
+        "message": texto_final
+         }), 200
+
+    except Exception as e:
+          return jsonify({"message": f"Erro ao processar: {str(e)}"}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True)
 
 
 
